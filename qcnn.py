@@ -25,9 +25,9 @@ def two_qubit_unitary(bits, symbols):
     circuit = cirq.Circuit()
     circuit += one_qubit_unitary(bits[0], symbols[0:3])
     circuit += one_qubit_unitary(bits[1], symbols[3:6])
-    circuit += [cirq.ZZ(*bits)**symbols[7]]
-    circuit += [cirq.YY(*bits)**symbols[8]]
-    circuit += [cirq.XX(*bits)**symbols[9]]
+    circuit += [cirq.ZZ(*bits)**symbols[6]]
+    circuit += [cirq.YY(*bits)**symbols[7]]
+    circuit += [cirq.XX(*bits)**symbols[8]]
     circuit += one_qubit_unitary(bits[0], symbols[9:12])
     circuit += one_qubit_unitary(bits[1], symbols[12:])
     return circuit
@@ -77,32 +77,38 @@ def quantum_pool_circuit(source_bits, sink_bits, symbols):
         circuit += two_qubit_pool(source, sink, symbols)
     return circuit
 
-def multi_readout_model_circuit(qubits):
+def multi_readout_model_circuit(qubits, depth=1):
     """
     Make a model circuit with 1 quantum pool and conv operations.
-    Reduces N qubits to N/2 qubits.
+    Reduces N qubits to N/(2^depth) qubits.
     """
-    num_qubits = len(qubits)
-    mid = num_qubits // 2
     model_circuit = cirq.Circuit()
-    symbols = sympy.symbols('qconv0:21')
-    model_circuit += quantum_conv_circuit(qubits, symbols[0:15])
-    model_circuit += quantum_pool_circuit(qubits[:mid], qubits[mid:],
-                                          symbols[15:21])
+    symbols = sympy.symbols('qconv0:{}'.format(21 * depth))
+    for i in range(depth):
+        num_qubits = len(qubits)
+        mid = num_qubits // 2
+        model_circuit += quantum_conv_circuit(qubits, symbols[:15])
+        model_circuit += quantum_pool_circuit(qubits[:mid], qubits[mid:],
+                                              symbols[15:21])
+        qubits = qubits[mid:]
+        symbols = symbols[21:]
     return model_circuit
 
 class QCNN(object):
-    def __init__(self, img_dim=4, lr=0.02, num_filters=8):
+    def __init__(self, img_dim=4, lr=0.02, num_filters=8, depth=2):
         self.img_dim = img_dim
         self.lr = lr
         self.num_filters = num_filters
+        self.depth = depth
         self.model = self.build_model()
     
     def build_model(self):
         qubits = cirq.GridQubit.rect(self.img_dim, self.img_dim)
-        readouts = [cirq.Z(bit) for bit in qubits[len(qubits) // 2:]]
+        num_readouts = len(qubits) // (2**self.depth)
+        # 1-local operators to read out
+        readouts = [cirq.Z(bit) for bit in qubits[-num_readouts:]]
         inp = tf.keras.Input(shape=(), dtype=tf.dtypes.string)
-        x = tfq.layers.PQC(multi_readout_model_circuit(qubits),
+        x = tfq.layers.PQC(multi_readout_model_circuit(qubits, depth),
                            readouts)(inp)
 
         x = tf.keras.layers.Dense(self.num_filters)(x)

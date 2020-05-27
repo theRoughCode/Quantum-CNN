@@ -63,46 +63,41 @@ def get_mnist(img_dim=4, preprocessor_name=X_FLIP, num_examples=500):
     x_train = x_train[:num_examples]
     y_train = y_train[:num_examples]
 
-    qubits = cirq.GridQubit.rect(img_dim, img_dim)
     preprocessor = get_preprocessor(preprocessor_name)
 
-    x_train_circ = [preprocessor(x, qubits) for x in x_train]
-    x_test_circ = [preprocessor(x, qubits) for x in x_test]
+    x_train_circ = [preprocessor(x, img_dim) for x in x_train]
+    x_test_circ = [preprocessor(x, img_dim) for x in x_test]
     # Convert to tensor
     x_train_tfcirc = tfq.convert_to_tensor(x_train_circ)
     x_test_tfcirc = tfq.convert_to_tensor(x_test_circ)
 
-    # Map labels from [0, 1] to [-1, 1]
-    y_train = 2.0*y_train-1.0
-    y_test = 2.0*y_test-1.0
-
-    y_train = y_train.reshape(-1, 1)
-    y_test = y_test.reshape(-1, 1)
-
     return (x_train_tfcirc, y_train), (x_test_tfcirc, y_test)
 
-def preprocess_x_flip(image, qubits, threshold=0.5):
+def preprocess_x_flip(image, dims=4, threshold=0.5):
     """Encode truncated classical image by applying X if above threshold."""
     values = np.ndarray.flatten(image)
+    qubits = cirq.GridQubit.rect(dims, dims)
     circuit = cirq.Circuit()
     for i, value in enumerate(values):
       if value > threshold:
         circuit.append(cirq.X(qubits[i]))
     return circuit
 
-def preprocess_y_rot(image, qubits):
+def preprocess_y_rot(image, dims=4):
     """Encode truncated classical image by rotating through a Y gate based
        on pixel value."""
     values = np.ndarray.flatten(image)
+    qubits = cirq.GridQubit.rect(dims, dims)
     circuit = cirq.Circuit()
     for i, value in enumerate(values):
       circuit.append(cirq.ry(np.pi * value)(qubits[i]))
     return circuit
 
-def preprocess_y_pow(image, qubits):
+def preprocess_y_pow(image, dims=4):
     """Encode truncated classical image by applying a Y gate and weighting
        by pixel value."""
     values = np.ndarray.flatten(image)
+    qubits = cirq.GridQubit.rect(dims, dims)
     circuit = cirq.Circuit()
     for i, value in enumerate(values):
       circuit.append(cirq.Y(qubits[i]) ** (np.pi * value))

@@ -11,7 +11,7 @@ BATCH_SIZE = 8
 EPOCHS = 3
 IMG_DIM = 4
 NUM_FILTERS = 8
-PREPROCESSOR = X_FLIP
+PREPROCESSOR = Y_ROT
 
 (x_train, y_train), (x_test, y_test) = get_mnist(IMG_DIM, PREPROCESSOR, NUM_EXAMPLES)
 
@@ -21,8 +21,8 @@ history = nn.model.fit(x=x_train, y=y_train, batch_size=BATCH_SIZE, epochs=EPOCH
 
 label = '{}x{}_{}.png'.format(IMG_DIM, IMG_DIM, PREPROCESSOR)
 
-plt.plot(history.history['hinge_accuracy'], label='Training')
-plt.plot(history.history['val_hinge_accuracy'], label='Testing')
+plt.plot(history.history['binary_accuracy'], label='Training')
+plt.plot(history.history['val_binary_accuracy'], label='Testing')
 plt.title('Hybrid CNN performance')
 plt.xlabel('Epochs')
 plt.legend()

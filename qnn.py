@@ -6,12 +6,8 @@ import sympy
 import collections
 import numpy as np
 
-def hinge_accuracy(y_true, y_pred):
-    y_true = tf.squeeze(y_true) > 0.0
-    y_pred = tf.squeeze(y_pred) > 0.0
-    result = tf.cast(y_true == y_pred, tf.float32)
-
-    return tf.reduce_mean(result)
+from gates import ZXGate
+from utils import hinge_accuracy, binary_accuracy
 
 class CircuitLayerBuilder():
     def __init__(self, data_qubits, readout):
@@ -29,38 +25,36 @@ def create_quantum_model(num_layers=1):
     readout = cirq.GridQubit(-1, -1)         # a single qubit at [-1,-1]
     circuit = cirq.Circuit()
     
-    # Prepare the readout qubit.
-    circuit.append(cirq.X(readout))
-    circuit.append(cirq.H(readout))
-    
     builder = CircuitLayerBuilder(
         data_qubits = data_qubits,
         readout=readout)
 
-    # TODO: experiment with ZX gate instead of ZZ (as in https://arxiv.org/pdf/1802.06002.pdf)
-    # Farhi et al. used 3 alternating layers of ZX/XX
+    # TODO: Experiment with 3 alternating layers of ZX/XX as used by Farhi et al.
     for i in range(num_layers):
+        builder.add_layer(circuit, ZXGate, "zz1{}".format(i + 1))
         builder.add_layer(circuit, cirq.XX, "xx{}".format(i + 1))
-        builder.add_layer(circuit, cirq.ZZ, "zz1{}".format(i + 1))
-
-    # Finally, prepare the readout qubit.
-    circuit.append(cirq.H(readout))
 
     return circuit, cirq.Z(readout)
 
-class QNN(object):
-    def __init__(self):
+class QNN():
+    def __init__(self, loss=tf.keras.losses.BinaryCrossentropy, optimizer=tf.keras.optimizers.Adam,
+                 lr=0.02, metrics=[binary_accuracy]):
+        self.loss = loss()
+        self.optimizer = optimizer(learning_rate=lr)
+        self.metrics = metrics
         self.model = self.build_model()
 
     def build_model(self):
         model_circuit, model_readout = create_quantum_model()
+
+        # The input is the data-circuit, encoded as a tf.string
+        q_img = tf.keras.layers.Input(shape=(), dtype=tf.string)
+        # The PQC layer returns the expected value of the readout gate, range [-1,1].
+        x = tfq.layers.PQC(model_circuit, model_readout)(q_img)
+        # Map output from [-1, 1] to [0, 1]
+        out = (x + 1) / 2
+
         # Build the Keras model.
-        model = tf.keras.Sequential([
-            # The input is the data-circuit, encoded as a tf.string
-            tf.keras.layers.Input(shape=(), dtype=tf.string),
-            # The PQC layer returns the expected value of the readout gate, range [-1,1].
-            tfq.layers.PQC(model_circuit, model_readout),
-        ])
-        model.compile(loss=tf.keras.losses.Hinge(), optimizer=tf.keras.optimizers.Adam(),
-                      metrics=[hinge_accuracy])
+        model = tf.keras.Model(inputs=q_img, outputs=out)
+        model.compile(loss=self.loss, optimizer=self.optimizer, metrics=self.metrics)
         return model

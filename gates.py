@@ -1,49 +1,85 @@
 import cirq
 import numpy as np
 
-class ZXGate(cirq.ops.eigen_gate.EigenGate, cirq.ops.gate_features.TwoQubitGate):
-  """
-  ZXGate with variable weight.
-  Retrieved from Quantum Computing: An Applied Approach by Jack D. Hidary. Pg 156
-  Link: https://books.google.ca/books?id=nymsDwAAQBAJ&pg=PA156&lpg=PA156&dq=cirq+ZX+gate&source=bl&ots=8-budtYoQv&sig=ACfU3U3bNl9oWz1NEZvrqKw1l_0YGHmZyA&hl=en&sa=X&ved=2ahUKEwid3bqql8TpAhWIUt8KHQYqDnUQ6AEwAXoECAoQAQ#v=onepage&q=cirq%20ZX%20gate&f=false
-  """
+class UGate():
+    """
+    Unitary rotation gate about arbitrary axis (phi, theta)
+    with angle alpha.
+    Rn(α) = Rz(φ)Ry(θ)Rz(α)Ry(−θ)Rz(−φ)
+    Refer to: http://www.vcpc.univie.ac.at/~ian/hotlist/qc/talks/bloch-sphere-rotations.pdf
+    """
+    def __init__(self, phi, theta, alpha, qubit=None):
+        self.phi = phi
+        self.theta = theta
+        self.alpha = alpha
+        self.qubit = qubit
+        self.exponent = 1
+        self.gates  = [
+            cirq.rz(phi)**-1, cirq.ry(theta)**-1,
+            cirq.rz(alpha),
+            cirq.ry(theta), cirq.rz(phi)
+        ]
 
-  def __init__(self, weight=1):
-    self.weight = weight
-    super().__init__(exponent=weight)
+    def __call__(self, qubit):
+        return self.on(qubit)
 
-  def _eigen_components(self):
-    return [
-            (1, np.array([[0.5, 0.5, 0, 0],
-                          [0.5, 0.5, 0, 0],
-                          [0, 0, 0.5, -0.5],
-                          [0, 0, -0.5, 0.5]])),
-            (-1, np.array([[0.5, -0.5, 0, 0],
-                           [-0.5, 0.5, 0, 0],
-                           [0, 0, 0.5, 0.5],
-                           [0, 0, 0.5, 0.5]]))
-    ]
+    def on(self, qubit):
+        return UGate(self.phi, self.theta, self.alpha, qubit)
+    
+    def __pow__(self, symbol):
+        self.exponent = symbol
+        return [gate.on(self.qubit)**symbol for gate in self.gates]
 
-  # Lets weight be a Symbol. Useful for parameterization.
-  def _resolve_parameters_(self, param_resolver):
-    return ZXGate(weight=param_resolver.value_of(self.weight))
+    def __str__(self):
+        if self.exponent == 1:
+            return 'U({})'.format(self.alpha)
+        return 'U({})**{!r}'.format(self.alpha, self.exponent)
 
-  def _circuit_diagram_info_(self, args):
-    return cirq.protocols.CircuitDiagramInfo(
-        wire_symbols=('Z', 'X'),
-        exponent=self.weight
-    )
+class ControlledUGate():
+    """
+    Controlled U Gate using RZ and CNOT.
+    See: https://qiskit.org/textbook/ch-gates/more-circuit-identities.html
+    """
+    def __init__(self, theta, qubit=None, readout=None):
+        self.theta = theta
+        self.qubit = qubit
+        self.readout = readout
+        self.exponent = 1
 
-  def __str__(self) -> str:
-    if self._global_shift == -0.5:
-      if self._exponent == 1:
-          return 'ZX(π)'
-      return f'ZX({self._exponent!r}π)'
-    if self.exponent == 1:
-      return 'ZX'
-    return f'ZX**{self._exponent!r}'
+    def __call__(self, qubit, readout):
+        return self.on(qubit, readout)
 
-  def __repr__(self) -> str:
-    if self._exponent == 1:
-      return 'cirq.ZX'
-    return f'(cirq.ZX**{cirq._compat.proper_repr(self._exponent)})'
+    def on(self, qubit, readout):
+        return ControlledUGate(self.theta, qubit, readout)
+    
+    def __pow__(self, symbol):
+        self.exponent = symbol
+        return [(cirq.rz(self.theta)**-1)(self.readout)**symbol,
+                 cirq.CNOT(self.qubit, self.readout)**symbol,
+                 cirq.rz(self.theta)(self.readout)**symbol]
+
+    def __str__(self):
+        if self.exponent == 1:
+            return 'CU({})'.format(self.theta)
+        return 'CU({})**{!r}'.format(self.theta, self.exponent)
+
+class ZXGate():
+    def __init__(self, qubit=None, readout=None, exponent=1):
+        self.qubit = qubit
+        self.readout = readout
+        self.exponent = exponent
+    
+    def __call__(self, qubit, readout):
+        return self.on(qubit, readout)
+
+    def on(self, qubit, readout):
+        return ZXGate(qubit, readout)
+    
+    def __pow__(self, symbol):
+        self.exponent = symbol
+        return [cirq.H(self.readout)**symbol, cirq.ZZ(self.qubit, self.readout)**symbol, cirq.H(self.readout)**symbol]
+    
+    def __str__(self):
+        if self.exponent == 1:
+            return 'ZX'
+        return 'ZX**{!r}'.format(self.exponent)
